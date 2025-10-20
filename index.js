@@ -9,6 +9,7 @@ const TARGET_PORT = 20000;
 const ACCESS_CONTROL_ALLOW_ORIGIN = ['*'];
 const ACCESS_CONTROL_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'];
 const ACCESS_CONTROL_ALLOW_HEADERS = ['*', 'Authorization'];
+const ACCESS_CONTROL_ENCODING = ['gzip', 'deflate', 'br'];
 /***********************/
 
 const TARGET_URL = `http://${TARGET_HOST}:${TARGET_PORT}`;
@@ -18,27 +19,33 @@ const proxy = httpProxy.createProxyServer();
 let id = 0;
 
 proxy.on('proxyRes', (proxyRes, req, res) => {
-    if ((ACCESS_CONTROL_ALLOW_METHODS.includes('OPTIONS')) && (req.method === 'OPTIONS')) {
+    if (req.method === 'OPTIONS') {
+        // Preflight CORS
         res.writeHead(200, {
             'Access-Control-Allow-Origin': ACCESS_CONTROL_ALLOW_ORIGIN.join(', '),
-            'Access-Control-Allow-Methods': ACCESS_CONTROL_ALLOW_METHODS.join(', '), 
+            'Access-Control-Allow-Methods': ACCESS_CONTROL_ALLOW_METHODS.join(', '),
             'Access-Control-Allow-Headers': ACCESS_CONTROL_ALLOW_HEADERS.join(', ')
         });
-    } else {
-        res.writeHead(proxyRes.statusCode, {
-            'Access-Control-Allow-Origin': ACCESS_CONTROL_ALLOW_ORIGIN.join(', ')
-        });
+        console.log(`${req.reqId} - response sent`);
+        res.end();
+        return;
     }
+    
+    // Copiar todos los headers originales del servidor destino
+    const headers = { ...proxyRes.headers };
+    // Agregar/reescribir headers de CORS
+    headers['Access-Control-Allow-Origin'] = ACCESS_CONTROL_ALLOW_ORIGIN.join(',');
 
-    proxyRes.on('data', (chunk) => {
-        res.write(chunk);
-    });
+    res.writeHead(proxyRes.statusCode, headers);
+
+    // Pipe directo: esto preserva gzip y otros encodings
+    proxyRes.pipe(res);
 
     proxyRes.on('end', () => {
-        res.end();
         console.log(`${req.reqId} - response sent`);
-        console.log();
-    });
+    }); 
+
+        
 });
 
 proxy.on('error', function (err, req, res) {
